@@ -125,6 +125,7 @@ def generateDirectoryHtml(list):
         entries += li
 
     footBlock = '''
+    </ul>
     </body>
     </html>
     '''
@@ -134,4 +135,4 @@ def generateDirectoryHtml(list):
     return open('directory.html', 'rb')
 
 def createListItem(item):
-    return '<li href='+item+'>'+item+'</li>'
+    return '<li><a href='+item+'>'+item+'</a></li>'
