@@ -33,8 +33,10 @@ class Server():
             try:
                 self.socket.shutdown(s.SHUT_RDWR)
                 self.socket.close()
+                print('Server socket closed')
                 sys.exit()
             except s.error:
+                print('Server port busy. Try another port.')
                 sys.exit()
 
     def __formatBaseDir(self, basedir):
