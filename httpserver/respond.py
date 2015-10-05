@@ -4,7 +4,7 @@ import mimetypes
 import os
 import datetime
 
-def respond(clientConnection):
+def respond(clientConnection, basedir):
 
     try:
         request, b, c, d = clientConnection.recvmsg(4096)
@@ -12,7 +12,7 @@ def respond(clientConnection):
         print('New Request:\n\n'+request+'\n\n')
 
         header = request[:request.find("\n")]
-        response = Response(header)
+        response = Response(header, basedir)
         print("File: "+response.fileName)
         print("Code: "+str(response.responseCode))
         print("MimeType: "+response.mimeType)
@@ -49,7 +49,8 @@ def generateResponseHeader(code, descriptor):
 
 class Response():
 
-    def __init__(self, requestString):
+    def __init__(self, requestString, basedir):
+        self.basedir = basedir
         self.fileName = self.__parseFileName(requestString)
         (self.mimeType, self.encoding) = self.__fetchMimeType(self.fileName)
         self.file = self.__fetchFile(self.fileName)
@@ -59,11 +60,6 @@ class Response():
         stringAfterMethod = requestString[requestString.find(' '):]
         filename = stringAfterMethod[:stringAfterMethod.rfind(' ')]
         filename = filename.strip()
-
-        # Strip leading / unless the request is for base directory
-        print('Filename: '+str(filename))
-        if filename[0] is '/' and len(filename) is not 1:
-            filename = filename[1:]
 
         return filename
 
@@ -83,22 +79,26 @@ class Response():
 
         return mimeType, encoding
 
-    def __fetchDirectory(self, directoryName):
-        list = os.listdir(directoryName)
-        return generateDirectoryHtml(list)
-
     def __fetchFile(self, filename):
+
+        if filename is '/':
+            absoluteFileName = self.basedir
+        else:
+            absoluteFileName = self.basedir + filename
+
         try:
-            if filename is '/':
-                file = self.__fetchDirectory('.')
-            elif os.path.isdir(filename):
-                file = self.__fetchDirectory(filename)
+            if os.path.isdir(absoluteFileName):
+                file = self.__fetchDirectory(absoluteFileName, filename)
             else:
-                file = open(filename, 'rb')
+                file = open(absoluteFileName, 'rb')
         except OSError:
             file = None
-        finally:
-            return file
+
+        return file
+
+    def __fetchDirectory(self, absoluteName, relativeName):
+        list = os.listdir(absoluteName)
+        return generateDirectoryHtml(list, relativeName, self.basedir)
 
     def __createResponseCode(self, file):
         if file is None:
@@ -106,7 +106,7 @@ class Response():
         else:
             return 200, 'OK'
 
-def generateDirectoryHtml(list):
+def generateDirectoryHtml(list, directory, baseDir):
     directoryResponseFile = open('directory.html', 'w+')
     headBlock = '''
     <!DOCTYPE html>
@@ -120,10 +120,14 @@ def generateDirectoryHtml(list):
 
     '''
     entries = ''
-    for item in list:
-        li = createListItem(item)
-        entries += li
 
+    #Special case for  base directory when formatting hrefs
+    if directory is '/':
+        directory = ''
+
+    for item in list:
+        li = createListItem(item, directory)
+        entries += li
     footBlock = '''
     </ul>
     </body>
@@ -134,5 +138,6 @@ def generateDirectoryHtml(list):
     directoryResponseFile.close()
     return open('directory.html', 'rb')
 
-def createListItem(item):
-    return '<li><a href='+item+'>'+item+'</a></li>'
+def createListItem(item, directory):
+    href = directory + '/' +item
+    return '<li><a href='+href+'>'+item+'</a></li>'
