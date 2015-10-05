@@ -9,8 +9,6 @@ def respond(clientConnection, basedir):
     try:
         request, b, c, d = clientConnection.recvmsg(4096)
         request = request.decode('UTF-8')
-        print('New Request:\n\n'+request+'\n\n')
-
         header = request[:request.find("\n")]
         response = Response(header, basedir)
         print("File: "+response.fileName)
@@ -24,14 +22,16 @@ def respond(clientConnection, basedir):
         clientConnection.close()
         raise KeyboardInterrupt
     except s.error:
-        clientConnection.shutdown(s.SHUT_RDWR)
-        clientConnection.close()
-        raise s.error
+        try:
+            clientConnection.shutdown(s.SHUT_RDWR)
+            clientConnection.close()
+        except s.error:
+            print('Connection closed by client')
 
 def writeResponse(client, response):
     header = generateResponseHeader(response.responseCode, response.responseDescriptor)
     date = bytes('Date: '+str(datetime.datetime.now())+'\n', 'UTF-8')
-    server = b'Andrews HTTP Server \n'
+    server = b'Server: Andrews HTTP Server \n'
     type = bytes('Content-Type: '+response.mimeType+'\n', 'UTF-8')
     if response.file is None:
         content = generate404Response(response.fileName)

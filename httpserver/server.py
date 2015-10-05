@@ -30,9 +30,12 @@ class Server():
                 clientSocket, clientAddress = self.socket.accept()
                 self.q.put((clientSocket, self.basedir))
         except (KeyboardInterrupt, s.error):
-            self.socket.shutdown(s.SHUT_RDWR)
-            self.socket.close()
-            sys.exit()
+            try:
+                self.socket.shutdown(s.SHUT_RDWR)
+                self.socket.close()
+                sys.exit()
+            except s.error:
+                sys.exit()
 
     def __formatBaseDir(self, basedir):
         #Trim trailing slash for convenience
