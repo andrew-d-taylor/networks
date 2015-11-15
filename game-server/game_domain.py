@@ -2,13 +2,14 @@ __author__ = 'andrew'
 
 default_col_count = 128
 default_row_count = 128
+starting_cookie_count = 3
 
 class Player():
 
-    def __init__(self, name, position, cookies):
-        self.name = name
+    def __init__(self, playerid, position, cookies):
         self.position = position
         self.cookies = cookies
+        self.playerId = playerid
 
     def movePosition(self, newPosition):
         self.position = newPosition
@@ -18,6 +19,12 @@ class Player():
 
     def getHitByCookie(self):
         self.cookies += 1
+
+class Position():
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
 class GameMap():
 
@@ -40,11 +47,11 @@ class PlayerGrid():
             self.grid = [[None for x in range(default_row_count)] for x in range(default_col_count)]
 
     def getNextPosition(self, currentPosition, direction):
-        if direction is "UP":
+        if direction.isUp():
             return self.__getNextUpPosition(currentPosition)
-        elif direction is "DOWN":
+        elif direction.isDown():
             return self.__getNextDownPosition(currentPosition)
-        elif direction is "LEFT":
+        elif direction.isLeft():
             return self.__getNextLeftPosition(currentPosition)
         else:
             return self.__getNextRightPosition(currentPosition)
