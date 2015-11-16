@@ -7,6 +7,7 @@ import sys
 from protocol import ClientRequest
 from services import *
 from game_domain import *
+from game import *
 
 
 class FrontServer():
@@ -17,19 +18,34 @@ class FrontServer():
         self.loginQueue = ThreadQue()
 
     def start(self):
-        self.loginSocket.bind(self.port)
-        self.loginSocket.listen(500)
+        self.loginSocket.bind(('localhost',self.port))
+        self.loginSocket.listen(200)
 
-        for x in range(100):
+        for x in range(10):
             thread = threading.Thread(target=loginWorker, args=(self.loginQueue,))
             thread.daemon = True
             thread.start()
+
+        requestQueue = Queue()
+        responseQueue = Queue()
+
+        GameServer.instance().requestQueue = requestQueue
+
+        updater = ServerUpdater()
+        receiver = RequestReader()
+
+        updateThread = threading.Thread(target=updater.run)
+        receiverThread = threading.Thread(target=receiver.run, args=(requestQueue,))
+
+        updateThread.start()
+        receiverThread.start()
 
         while True:
             clientSocket, clientAddress = self.loginSocket.accept()
             self.loginQueue.put(clientSocket)
 
 
+#Spin off login(player) threads
 def loginWorker(loginQueue):
     while True:
         clientSocket = loginQueue.get()
@@ -47,39 +63,3 @@ def loginResponder(clientSocket):
             playGame(clientRequest.playerId, clientSocket)
     except socket.error:
         raise socket.error
-
-def playGame(playerId, clientSocket):
-    gameServer = GameServer()
-    gameServer.addPlayerToGame(playerId, clientSocket)
-
-class Singleton(type):
-    _instances = {}
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-
-class GameServer(metaclass=Singleton):
-    pass
-
-    #Only called once
-    def __init__(self):
-        self.test = "Tes"
-        self.playerService = PlayerService()
-
-    def addPlayerToGame(self, playerId, clientSocket):
-        player = self.playerService.register(playerId)
-        playerSession = PlayerSession(player, clientSocket)
-
-class PlayerSession():
-
-    def __init__(self, player, playerSocket):
-        self.player = player
-        self.playerSocket = playerSocket
-
-class OtherSingleton(metaclass=Singleton):
-    pass
-
-    def foo(self):
-        print("Food")
