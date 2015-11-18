@@ -27,23 +27,36 @@ class FrontServer():
             thread.start()
 
         requestQueue = Queue()
-        responseQueue = Queue()
 
         GameServer.instance().requestQueue = requestQueue
 
         updater = ServerUpdater()
         receiver = RequestReader()
+        cookieMover = CookieMover()
 
         updateThread = threading.Thread(target=updater.run)
+        updateThread.daemon = True
+
         receiverThread = threading.Thread(target=receiver.run, args=(requestQueue,))
+        receiverThread.daemon = True
+
+        moverThread = threading.Thread(target=cookieMover.run)
+        moverThread.daemon = True
 
         updateThread.start()
         receiverThread.start()
+        moverThread.start()
 
-        while True:
-            clientSocket, clientAddress = self.loginSocket.accept()
-            self.loginQueue.put(clientSocket)
-
+        try:
+            print('Server started listening')
+            while True:
+                clientSocket, clientAddress = self.loginSocket.accept()
+                print('Connection made with front server')
+                self.loginQueue.put(clientSocket)
+        except (KeyboardInterrupt, SystemExit, socket.error):
+            self.loginSocket.shutdown(socket.SHUT_RDWR)
+            self.loginSocket.close()
+            sys.exit()
 
 #Spin off login(player) threads
 def loginWorker(loginQueue):
@@ -52,14 +65,12 @@ def loginWorker(loginQueue):
         loginResponder(clientSocket)
 
 def loginResponder(clientSocket):
-    try:
         request, b, c, d = clientSocket.recvmsg(4096)
         request = request.decode('UTF-8')
-        clientRequest = ClientRequest(request)
+        clientRequest = ClientRequest(request, clientSocket, request.split()[1])
         if not clientRequest.command.isLogin():
-            #write back error response
+            clientSocket.sendall(bytes(badCommand("Player must log in before playing. Goodbye.")))
+            print('User tried to play without logging in')
             clientSocket.close()
         else:
             playGame(clientRequest.playerId, clientSocket)
-    except socket.error:
-        raise socket.error

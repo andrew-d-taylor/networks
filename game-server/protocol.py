@@ -2,7 +2,7 @@ __author__ = 'andrew'
 
 
 def loginSuccess(mapx, mapy):
-    return "200 " + mapx + " " + mapy + "\n"
+    return "200 " + str(mapx) + ", " + str(mapy) + "\n"
 
 
 def playerMessage(playerId, messageText):
@@ -13,16 +13,19 @@ def playerWon(playerId):
     return "101 " + playerId + " won the game!\n"
 
 
-def mapSubsection(x1, y1, x2, y2, tileNumber):
-    return "102 " + x1 + " " + y1 + " " + x2 + " " + y2 + " " + tileNumber + " \n"
+def mapSubsection(x1, y1, x2, y2, tiles):
+    msg = ["102 " + str(x1) + ", " + str(y1) + ", " + str(x2) + ", " + str(y2)]
+    for tile in tiles:
+        msg.append(", "+str(tile))
+    msg.append(" \n")
+    return "".join(msg)
 
-
-def cookieThrown(cookieId, cookieX, cookieY, dir):
-    return "103 " + cookieId + " " + cookieX + " " + cookieY + " " + dir + "\n"
+def cookieInFlight(cookieId, cookieX, cookieY, direction):
+    return "103 " + cookieId + ", " + str(cookieX) + ", " + str(cookieY) + ", " + direction + "\n"
 
 
 def playerCookieUpdate(playerId, playerX, playerY, cookieCount):
-    return "104 " + playerId + " " + playerX + " " + playerY + " " + cookieCount + "\n"
+    return "104 " + playerId + ", " + str(playerX) + ", " + str(playerY) + ", " + str(cookieCount) + "\n"
 
 
 def badCommand(message):
@@ -34,9 +37,11 @@ def serverError(message):
 
 
 class ClientRequest():
-    def __init__(self, requestString):
+    def __init__(self, requestString, originSocket, originId):
         requestSplit = requestString.split()
         self.command = Command(requestSplit[0])
+        self.origin = originSocket
+        self.originId = originId
         if self.command.isLogin():
             self.playerId = requestSplit[1]
         elif self.command.isMessage():
@@ -44,6 +49,10 @@ class ClientRequest():
             self.message = requestSplit[2]
         else:
             self.direction = Direction(requestSplit[1])
+
+    def writeErrorResponse(self, msg):
+        raw = bytes(msg)
+        self.origin.sendall(raw)
 
 
 class Command():
@@ -77,8 +86,12 @@ class Command():
 
 
 class Direction():
+
     def __init__(self, requestSubstring):
         self.__direction = self.__parseDirection(requestSubstring)
+
+    def __str__(self):
+        return self.__direction
 
     def __parseDirection(self, requestSubstring):
         requestSubstring = requestSubstring.lower()

@@ -1,6 +1,7 @@
 __author__ = 'andrew'
 
 from game_domain import *
+from game import Singleton
 import random
 
 class PlayerService(metaclass=Singleton):
@@ -9,8 +10,14 @@ class PlayerService(metaclass=Singleton):
         random.seed()
         self.playerRegistry = PlayerRegistry()
 
-    def getLoggedInPlayers(self):
-        return None
+    def getPlayers(self):
+        return self.playerRegistry.players.items()
+
+    def get(self, playerId):
+        return self.playerRegistry.load(playerId)
+
+    def save(self, player):
+        self.playerRegistry.save(player)
 
     def register(self, playerId):
         player = self.playerRegistry.load(playerId)
@@ -19,13 +26,13 @@ class PlayerService(metaclass=Singleton):
         player.loggedIn = True
         return player
 
+    def logOut(self, player):
+        player.logOut()
+        self.playerRegistry.remove(player)
+
     #TODO verify that random state is a traversible tile
     def __randomizeNewState(self, playerid):
-        player = Player(playerid=playerid)
-        player.cookies = starting_cookie_count
-        player.position = Position()
-        player.position.x = random.randint(0, default_col_count)
-        player.position.y = random.randint(0, default_row_count)
+        player = Player(playerid=playerid, cookies=starting_cookie_count, position=None)
         return player
 
 class PlayerRegistry():
@@ -33,8 +40,9 @@ class PlayerRegistry():
     def __init__(self):
         self.players = self.__loadState()
 
+    #Could read from a persistence file here
     def __loadState(self):
-        return None
+        return {}
 
     def load(self, playerId):
         try:
@@ -42,19 +50,42 @@ class PlayerRegistry():
         except KeyError:
             return None
 
+    def remove(self, player):
+        self.players.pop(player.playerId)
+
     def save(self, player):
         self.players[player.playerId] = player
 
-class GameService():
+class GameService(metaclass=Singleton):
 
     def __init__(self):
         self.gameMap = self.__randomizeNewState()
+        self.playerService = PlayerService()
+
+    def movePlayer(self, player, direction):
+        self.gameMap.travel(player, direction)
+        self.playerService.save(player)
 
     def __randomizeNewState(self):
-        return None
+        newGrid = PlayerGrid(default_col_count, default_row_count)
+        newGrid.generateDefaultLayout()
+        return GameMap(newGrid)
+
+    def getRandomNavigableTile(self):
+        return self.gameMap.getRandomStartingSpace()
 
     def getCookies(self):
-        return None
+        return self.gameMap.inFlightCookies.items()
 
-    def getMap(self):
-        return None
+    def hasCookiesInFlight(self):
+        return len(self.gameMap.inFlightCookies) > 0
+
+    def getMapGrid(self):
+        return self.gameMap.playerGrid
+
+    def moveCookies(self):
+        self.gameMap.moveInFlightCookies()
+
+    def tossCookie(self, player, cookie, direction):
+        cookie.direction = direction
+        self.gameMap.putCookieInFlight(cookie, player.position, direction)
