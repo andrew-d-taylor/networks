@@ -1,40 +1,18 @@
 __author__ = 'andrew'
 
-import socket
-from multiprocessing.dummy import Queue as ThreadQue
-from queue import Queue
 from protocol import *
 from game_domain import *
-import threading
+from communication import *
 import services
-import time
+from utilities import ThreadSafeSingleton
 
 COOKIE_SPEED = 3
 
 def playGame(playerId, clientSocket):
-    GameServer.instance().addPlayerToGame(playerId, clientSocket)
+    print('Player '+playerId+' is about to play the game')
+    Game.instance().addPlayerToGame(playerId, clientSocket)
 
-class Singleton(type):
-    _instances = {}
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-class ThreadSafeSingleton(object):
-    __singleton_lock = threading.Lock()
-    __singleton_instance = None
-
-    @classmethod
-    def instance(cls):
-        if not cls.__singleton_instance:
-            with cls.__singleton_lock:
-                if not cls.__singleton_instance:
-                    cls.__singleton_instance = cls()
-        return cls.__singleton_instance
-
-
-class GameServer(ThreadSafeSingleton):
+class Game(ThreadSafeSingleton):
     pass
 
     #Only called once
@@ -60,10 +38,11 @@ class GameServer(ThreadSafeSingleton):
     def __considerPlayerMove(self, request):
         try:
             player = self.playerService.get(request.originId)
+            print('Player '+player.playerId+' requested a move '+str(request.direction))
             self.gameService.movePlayer(player, request.direction)
             self.cleanState = False
         except UnmovableDirection:
-            raise ClientRequestError(badCommand("Can't move in that direction"))
+            raise PlayerGameError(badCommand("Can't move in that direction"))
 
     def __considerPlayerThrow(self, request):
         try:
@@ -72,21 +51,21 @@ class GameServer(ThreadSafeSingleton):
             self.gameService.tossCookie(player, cookie, request.direction)
             self.cleanState = False
         except IndexError:
-            raise ClientRequestError(badCommand("You don't have any more cookies to throw"))
+            raise PlayerGameError(badCommand("You don't have any more cookies to throw"))
 
     def __considerPlayerLogin(self, request):
         if self.playerService.get(request.playerId) is None:
             playGame(request.playerId, request.origin)
             self.cleanState = False
         else:
-            raise ClientRequestError(badCommand("Player already logged in"))
+            raise PlayerGameError(badCommand("Player already logged in"))
 
     def __considerPlayerMessage(self, request):
         try:
             other = self.playerSenders[request.playerId]
             other.respondToPlayer(request.message)
         except KeyError:
-            raise ClientRequestError(badCommand("Recipient is not logged in"))
+            raise PlayerGameError(badCommand("Recipient is not logged in"))
 
     #Called only by the ServerUpdater thread
     def getGameState(self):
@@ -94,8 +73,10 @@ class GameServer(ThreadSafeSingleton):
             return None, None
         players = self.playerService.getPlayers()
         cookies = self.gameService.getCookies()
+        tuples = self.playerSenders.items()
+        senders = [v for (k,v) in tuples]
         self.cleanState = True
-        return self.playerSenders, GameState(None, cookies, players)
+        return senders, GameState(None, cookies, players)
 
     def getInitialGameState(self):
         players = self.playerService.getPlayers()
@@ -105,16 +86,19 @@ class GameServer(ThreadSafeSingleton):
 
     def addPlayerToGame(self, playerId, clientSocket):
         player = self.playerService.register(playerId)
-        player.position = self.gameService.getRandomNavigableTile()
-        playerReceiver = PlayerReceiver(player, clientSocket, self.requestQueue)
-        playerReceiver.listen()
+        self.gameService.assignStartingPosition(player)
+        self.playerService.assignStartingCookies(player)
+        playerReceiver = PlayerReceiver(playerId, clientSocket, self.requestQueue)
         playerSender = PlayerSender(player.playerId, clientSocket)
         self.playerReceivers[player.playerId] = playerReceiver
         self.playerSenders[player.playerId] = playerSender
-        playerSender.respondToPlayer(loginSuccess(player.position.x, player.position.y))
+        mapX = self.gameService.getMapGrid().columns
+        mapY = self.gameService.getMapGrid().rows
+        playerSender.respondToPlayer(loginSuccess(mapX, mapY))
         initialState = self.getInitialGameState()
         playerSender.sendMessages(initialState.toMessages())
         print('Player '+playerId+' was added to the game')
+        playerReceiver.listen()
 
     def hasCookiesInFlight(self):
         return self.gameService.hasCookiesInFlight()
@@ -168,70 +152,6 @@ class GameState():
                 playerMessages.append(playerCookieUpdate(player.playerId, player.position.x, player.position.y, len(player.cookies)))
         return playerMessages
 
-#Ticks cookie movement and sends updates to players
-class ServerUpdater():
-
-    def run(self):
-        while True:
-            GameServer.instance().moveCookies()
-            senders, gameState = GameServer.instance().getGameState()
-            if gameState is not None:
-                messages = gameState.toMessages()
-                [sender.sendMessages(messages) for sender in senders]
-            time.sleep(0)
-
-#Process requests from players and gives them to the game server
-class RequestReader():
-
-    def run(self, requestQueue):
-        while True:
-            clientRequest = requestQueue.get()
-            try:
-                GameServer.instance().considerPlayerRequest(clientRequest.message)
-            except ClientRequestError as e:
-                clientRequest.origin.sendall(bytes(e.msg))
-            time.sleep(0)
-
-class CookieMover():
-
-    def run(self):
-        while True:
-            GameServer.instance().moveCookies()
-            time.sleep(COOKIE_SPEED)
-
-class PlayerReceiver():
-
-    def __init__(self, playerId, playerSocket, requestQueue):
-        self.playerId = playerId
-        self.playerSocket = playerSocket
-        self.requestQueue = requestQueue
-
-    def listen(self):
-        while True:
-            try:
-                msg, b, c, d = self.playerSocket.recvmsg(4096)
-                self.requestQueue.put(ClientRequest(msg, self.playerSocket, self.playerId))
-                time.sleep(0)
-            except (KeyboardInterrupt, socket.error, SystemExit) as error:
-                self.playerSocket.shutdown(socket.SHUT_RDWR)
-                self.playerSocket.close()
-
-                raise error
-
-class PlayerSender():
-
-    def __init__(self, playerId, clientSocket):
-        self.playerId = playerId
-        self.clientSocket = clientSocket
-
-    def respondToPlayer(self, message):
-        raw = bytes(message)
-        self.clientSocket.sendall(raw)
-
-    def sendMessages(self, messages):
-        for msg in messages:
-            self.respondToPlayer(msg)
-
-class ClientRequestError(Exception):
+class PlayerGameError(Exception):
     def __init__(self, msg):
         self.msg = msg

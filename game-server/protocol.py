@@ -1,5 +1,6 @@
 __author__ = 'andrew'
 
+from settings import encoding
 
 def loginSuccess(mapx, mapy):
     return "200 " + str(mapx) + ", " + str(mapy) + "\n"
@@ -38,6 +39,7 @@ def serverError(message):
 
 class ClientRequest():
     def __init__(self, requestString, originSocket, originId):
+        print('New message: '+requestString)
         requestSplit = requestString.split()
         self.command = Command(requestSplit[0])
         self.origin = originSocket
@@ -51,7 +53,7 @@ class ClientRequest():
             self.direction = Direction(requestSplit[1])
 
     def writeErrorResponse(self, msg):
-        raw = bytes(msg)
+        raw = bytes(msg, encoding)
         self.origin.sendall(raw)
 
 

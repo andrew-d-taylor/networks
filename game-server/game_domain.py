@@ -1,14 +1,9 @@
 __author__ = 'andrew'
 
-from game import Singleton
+from utilities import Singleton
 import random
-
-default_col_count = 10
-default_row_count = 10
-starting_cookie_count = 3
-
-tile_navigable = 0
-tile_unnavigable = -1
+from services import PlayerService
+from settings import *
 
 class Player():
 
@@ -16,7 +11,6 @@ class Player():
         self.position = position
         self.cookies = cookies
         self.playerId = playerid
-        self.loggedIn = True
 
     def movePosition(self, newPosition):
         self.position = newPosition
@@ -30,9 +24,6 @@ class Player():
         cookie.playerId = self.playerId
         cookie.position = self.position
         self.cookies.append(cookie)
-
-    def logOut(self):
-        self.loggedIn = False
 
 class Cookie():
 
@@ -48,6 +39,9 @@ class Position():
         self.x = x
         self.y = y
 
+    def __str__(self):
+        return ''+str(self.x)+', '+str(self.y)
+
 class GameMap(metaclass=Singleton):
 
     def __init__(self, playerGrid):
@@ -58,15 +52,18 @@ class GameMap(metaclass=Singleton):
         nextPosition = self.playerGrid.getNextPosition(position, direction)
         return self.playerGrid.isTraversible(nextPosition)
 
-    def getRandomStartingSpace(self):
+    def assignRandomStartingPosition(self, player):
         notFound = True
         random.seed()
+        x, y = 0,0
+        space = None
         while notFound:
             x, y = random.randint(0, self.playerGrid.columns - 1), random.randint(0, self.playerGrid.rows - 1)
             space = self.playerGrid.getMapSpace(Position(x, y))
             if space.isTraversible():
                 notFound = False
-        return space
+        player.position = Position(x, y)
+        space.addPlayer(player)
 
     def putCookieInFlight(self, cookie, currentPosition, direction):
         cookie.position = currentPosition
@@ -106,9 +103,11 @@ class GameMap(metaclass=Singleton):
             raise UnmovableDirection
         else:
             nextPosition = self.playerGrid.getNextPosition(positioned_object.position, direction)
+            print('Next position is: '+str(nextPosition))
             if type(positioned_object) is Cookie:
                 self.playerGrid.changeCookiePosition(positioned_object, nextPosition)
             else:
+                print('Player moving from '+str(positioned_object.position)+' to '+str(nextPosition))
                 self.playerGrid.changePlayerPosition(positioned_object, nextPosition)
 
 class PlayerGrid():
@@ -161,44 +160,39 @@ class PlayerGrid():
         try:
             mapSpace = self.grid[position.x][position.y]
             return mapSpace
-        except KeyError:
+        except IndexError:
             raise UnmovableDirection
 
     def isTraversible(self, position):
-        mapSpace = self.getMapSpace(position)
+        try:
+            mapSpace = self.getMapSpace(position)
+        except IndexError:
+            return False
         return mapSpace.isTraversible()
 
     def __getNextUpPosition(self, position):
         if (position.y + 1) > default_row_count:
-            position.y = 0
-            return position
+            return Position(position.x, 0)
         else:
-            position.y += 1
-            return position
+            return Position(position.x, position.y + 1)
 
     def __getNextDownPosition(self, position):
         if (position.y - 1) < 0:
-            position.y = default_row_count
-            return position
+            return Position(position.x, default_row_count)
         else:
-            position.y += 1
-            return position
+            return Position(position.x, position.y - 1)
 
     def __getNextRightPosition(self, position):
         if (position.x + 1) > default_col_count:
-            position.x = 0
-            return position
+            return Position(0, position.y)
         else:
-            position.x += 1
-            return position
+            return Position(position.x + 1, position.y)
 
     def __getNextLeftPosition(self, position):
         if (position.x - 1) < 0:
-            position.x = default_col_count
-            return position
+            return Position(default_col_count, position.y)
         else:
-            position.x += 1
-            return position
+            return Position(position.x - 1, position.y)
 
 class MapSpace():
 

@@ -1,17 +1,21 @@
 __author__ = 'andrew'
 
 from game_domain import *
-from game import Singleton
 import random
+from utilities import Singleton
+import game_domain
+from settings import *
 
 class PlayerService(metaclass=Singleton):
 
     def __init__(self):
         random.seed()
         self.playerRegistry = PlayerRegistry()
+        self.cookieIdCount = 1
 
     def getPlayers(self):
-        return self.playerRegistry.players.items()
+        tuples = self.playerRegistry.players.items()
+        return [v for (k, v) in tuples]
 
     def get(self, playerId):
         return self.playerRegistry.load(playerId)
@@ -23,17 +27,20 @@ class PlayerService(metaclass=Singleton):
         player = self.playerRegistry.load(playerId)
         if player is None:
             player = self.__randomizeNewState(playerId)
-        player.loggedIn = True
+            self.save(player)
         return player
 
-    def logOut(self, player):
-        player.logOut()
-        self.playerRegistry.remove(player)
-
-    #TODO verify that random state is a traversible tile
     def __randomizeNewState(self, playerid):
-        player = Player(playerid=playerid, cookies=starting_cookie_count, position=None)
+        player = game_domain.Player(playerid=playerid, cookies=None, position=None)
         return player
+
+    def assignStartingCookies(self, player):
+        cookies = []
+        for i in range(starting_cookie_count):
+            cookie = game_domain.Cookie(str(self.cookieIdCount), player.playerId, player.position, direction=None)
+            cookies.append(cookie)
+            self.cookieIdCount += 1
+        player.cookies = cookies
 
 class PlayerRegistry():
 
@@ -67,12 +74,12 @@ class GameService(metaclass=Singleton):
         self.playerService.save(player)
 
     def __randomizeNewState(self):
-        newGrid = PlayerGrid(default_col_count, default_row_count)
+        newGrid = game_domain.PlayerGrid(default_col_count, default_row_count)
         newGrid.generateDefaultLayout()
-        return GameMap(newGrid)
+        return game_domain.GameMap(newGrid)
 
-    def getRandomNavigableTile(self):
-        return self.gameMap.getRandomStartingSpace()
+    def assignStartingPosition(self, player):
+        return self.gameMap.assignRandomStartingPosition(player)
 
     def getCookies(self):
         return self.gameMap.inFlightCookies.items()
