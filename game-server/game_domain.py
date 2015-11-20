@@ -2,8 +2,9 @@ __author__ = 'andrew'
 
 from utilities import Singleton
 import random
+from math import floor
 from services import PlayerService
-from settings import *
+import settings
 
 class Player():
 
@@ -17,8 +18,8 @@ class Player():
         for cookie in self.cookies:
             cookie.position = newPosition
 
-    def removeCookie(self, cookie):
-        self.cookies.remove(cookie)
+    def dropCookie(self):
+        return self.cookies.pop()
 
     def getHitByCookie(self, cookie):
         cookie.playerId = self.playerId
@@ -68,46 +69,55 @@ class GameMap(metaclass=Singleton):
     def putCookieInFlight(self, cookie, currentPosition, direction):
         cookie.position = currentPosition
         cookie.direction = direction
-        self.playerGrid.changeCookiePosition(cookie, currentPosition)
+        self.playerGrid.placeCookie(cookie, currentPosition)
         self.inFlightCookies[cookie.cookieId] = cookie
 
     def moveInFlightCookies(self):
-        for cookie in self.inFlightCookies:
+
+        cookiesToRemove = []
+
+        for key in self.inFlightCookies:
+            cookie = self.inFlightCookies[key]
             #move to next space
             nextPosition = self.playerGrid.getNextPosition(cookie.position, cookie.direction)
             nextMapSpace = self.playerGrid.getMapSpace(nextPosition)
-            #If the cookie has hit someone
-            if len(nextMapSpace.players) == 0:
-                self.inFlightCookies.pop(cookie.cookieId)
-                service = PlayerService()
-                hitPlayer = nextMapSpace.players[0]
-                hitPlayer.getHitByCookie(cookie)
-                previousSpace = self.playerGrid.getMapSpace(cookie.position)
-                previousSpace.cookies.remove(cookie)
-                service.save(hitPlayer)
+
             #if the cookie hit a wall
-            elif not nextMapSpace.isTraversible():
-                self.inFlightCookies.pop(cookie.cookieId)
+            if nextMapSpace is None or not nextMapSpace.isTraversible():
+                cookiesToRemove.append(cookie)
                 service = PlayerService()
                 player = service.get(cookie.playerId)
                 previousSpace = self.playerGrid.getMapSpace(cookie.position)
                 previousSpace.cookies.remove(cookie)
                 player.getHitByCookie(cookie)
                 service.save(player)
+            #If the cookie has hit someone
+            elif len(nextMapSpace.players) > 0:
+                cookiesToRemove.append(cookie)
+                service = PlayerService()
+                previousPlayer = service.get(cookie.playerId)
+                previousSpace = self.playerGrid.getMapSpace(cookie.position)
+                previousSpace.cookies.remove(cookie)
+                hitPlayer = nextMapSpace.players[0]
+                hitPlayer.getHitByCookie(cookie)
+                service.save(hitPlayer)
+                if len(previousPlayer.cookies) == 0:
+                    raise WinnerFound(previousPlayer.playerId)
             else:
-                #cookie keeps travelling
-                self.travel(cookie, nextPosition)
+            #cookie keeps travelling
+                self.travel(cookie, cookie.direction)
+
+        for cookie in cookiesToRemove:
+            self.inFlightCookies.pop(cookie.cookieId)
 
     def travel(self, positioned_object, direction):
         if not self.objectCanTravel(positioned_object.position, direction):
             raise UnmovableDirection
         else:
             nextPosition = self.playerGrid.getNextPosition(positioned_object.position, direction)
-            print('Next position is: '+str(nextPosition))
             if type(positioned_object) is Cookie:
                 self.playerGrid.changeCookiePosition(positioned_object, nextPosition)
             else:
-                print('Player moving from '+str(positioned_object.position)+' to '+str(nextPosition))
                 self.playerGrid.changePlayerPosition(positioned_object, nextPosition)
 
 class PlayerGrid():
@@ -115,7 +125,7 @@ class PlayerGrid():
     def __init__(self, columns, rows):
         self.columns = columns
         self.rows = rows
-        self.grid = [[MapSpace() for x in range(columns)] for y in range(rows)]
+        self.grid = [[MapSpace() for y in range(rows)] for x in range(columns)]
 
     def getNextPosition(self, currentPosition, direction):
         if direction.isUp():
@@ -128,17 +138,30 @@ class PlayerGrid():
             return self.__getNextRightPosition(currentPosition)
 
     def getAllRows(self):
-        rows = []
-        for index in rows:
-            rows.append(self.grid[index])
-        return rows
+        rowEntries = []
+        for index in range(self.rows):
+            rowEntry = []
+            for mapSpace in self.grid[:][index]:
+                rowEntry.append(mapSpace)
+            rowEntries.append(rowEntry.copy())
+        return rowEntries
 
+    #Creates a col x row grid with wrap-around holes in the middle of the x and y axis,
+    #But otherwise bordered by unnavigable tiles
     def generateDefaultLayout(self):
-        for x in range(self.rows):
-            for y in range(self.columns):
-                if y == 0 or y == self.columns or x == 0 or x == self.rows:
-                    space = self.grid[x][y]
-                    space.tile = tile_unnavigable
+        for y in range(self.rows):
+            for x in range(self.columns):
+                if settings.walls == 1 and y == 0 or y == self.rows - 1 or x == 0 or x == self.columns - 1:
+                    if settings.wallGaps == 1 and x == floor(self.columns / 2) or y == floor(self.rows / 2):
+                        space = self.grid[y][x]
+                        space.tile = settings.tile_navigable
+                    else:
+                        space = self.grid[y][x]
+                        space.tile = settings.tile_unnavigable
+                else:
+                    space = self.grid[y][x]
+                    space.tile = settings.tile_navigable
+            print(self.grid[:][y])
 
     def changeCookiePosition(self, cookie, position):
         previous_space = self.getMapSpace(cookie.position)
@@ -147,6 +170,11 @@ class PlayerGrid():
         mapSpace = self.getMapSpace(position)
         mapSpace.addCookie(cookie)
         cookie.position = position
+
+    def placeCookie(self, cookie, position):
+        cookie.position = position
+        space = self.getMapSpace(position)
+        space.addCookie(cookie)
 
     def changePlayerPosition(self, player, position):
         previous_space = self.getMapSpace(player.position)
@@ -158,39 +186,38 @@ class PlayerGrid():
 
     def getMapSpace(self, position):
         try:
-            mapSpace = self.grid[position.x][position.y]
+            mapSpace = self.grid[position.y][position.x]
             return mapSpace
         except IndexError:
-            raise UnmovableDirection
+            return None
 
     def isTraversible(self, position):
-        try:
-            mapSpace = self.getMapSpace(position)
-        except IndexError:
+        mapSpace = self.getMapSpace(position)
+        if mapSpace is None:
             return False
         return mapSpace.isTraversible()
 
     def __getNextUpPosition(self, position):
-        if (position.y + 1) > default_row_count:
+        if (position.y + 1) == self.rows:
             return Position(position.x, 0)
         else:
             return Position(position.x, position.y + 1)
 
     def __getNextDownPosition(self, position):
         if (position.y - 1) < 0:
-            return Position(position.x, default_row_count)
+            return Position(position.x, self.rows - 1)
         else:
             return Position(position.x, position.y - 1)
 
     def __getNextRightPosition(self, position):
-        if (position.x + 1) > default_col_count:
+        if (position.x + 1) == self.columns:
             return Position(0, position.y)
         else:
             return Position(position.x + 1, position.y)
 
     def __getNextLeftPosition(self, position):
         if (position.x - 1) < 0:
-            return Position(default_col_count, position.y)
+            return Position(self.columns - 1, position.y)
         else:
             return Position(position.x - 1, position.y)
 
@@ -199,7 +226,13 @@ class MapSpace():
     def __init__(self):
         self.players = []
         self.cookies = []
-        self.tile = tile_navigable
+        self.tile = settings.tile_navigable
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        return ''+str(self.tile)
 
     def addPlayer(self, player):
         self.players.append(player)
@@ -214,11 +247,15 @@ class MapSpace():
         self.cookies.remove(cookie)
 
     def isTraversible(self):
-        return self.tile is tile_navigable
+        return self.tile is settings.tile_navigable
 
 class UnmovableDirection(Exception):
     pass
 
+
+class WinnerFound(Exception):
+    def __init__(self, playerId):
+        self.playerId = playerId
 
 
 

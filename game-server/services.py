@@ -4,11 +4,13 @@ from game_domain import *
 import random
 from utilities import Singleton
 import game_domain
-from settings import *
+import settings
 
 class PlayerService(metaclass=Singleton):
 
-    def __init__(self):
+    def __init__(self, config=None):
+        if config is not None:
+            self.config = config
         random.seed()
         self.playerRegistry = PlayerRegistry()
         self.cookieIdCount = 1
@@ -23,6 +25,9 @@ class PlayerService(metaclass=Singleton):
     def save(self, player):
         self.playerRegistry.save(player)
 
+    def remove(self, playerId):
+        self.playerRegistry.remove(playerId)
+
     def register(self, playerId):
         player = self.playerRegistry.load(playerId)
         if player is None:
@@ -30,13 +35,13 @@ class PlayerService(metaclass=Singleton):
             self.save(player)
         return player
 
-    def __randomizeNewState(self, playerid):
-        player = game_domain.Player(playerid=playerid, cookies=None, position=None)
+    def __randomizeNewState(self, playerId):
+        player = game_domain.Player(playerid=playerId, cookies=None, position=None)
         return player
 
     def assignStartingCookies(self, player):
         cookies = []
-        for i in range(starting_cookie_count):
+        for i in range(settings.starting_cookie_count):
             cookie = game_domain.Cookie(str(self.cookieIdCount), player.playerId, player.position, direction=None)
             cookies.append(cookie)
             self.cookieIdCount += 1
@@ -45,11 +50,7 @@ class PlayerService(metaclass=Singleton):
 class PlayerRegistry():
 
     def __init__(self):
-        self.players = self.__loadState()
-
-    #Could read from a persistence file here
-    def __loadState(self):
-        return {}
+        self.players = {}
 
     def load(self, playerId):
         try:
@@ -57,8 +58,8 @@ class PlayerRegistry():
         except KeyError:
             return None
 
-    def remove(self, player):
-        self.players.pop(player.playerId)
+    def remove(self, playerId):
+        self.players.pop(playerId)
 
     def save(self, player):
         self.players[player.playerId] = player
@@ -74,7 +75,7 @@ class GameService(metaclass=Singleton):
         self.playerService.save(player)
 
     def __randomizeNewState(self):
-        newGrid = game_domain.PlayerGrid(default_col_count, default_row_count)
+        newGrid = game_domain.PlayerGrid(settings.default_col_count, settings.default_row_count)
         newGrid.generateDefaultLayout()
         return game_domain.GameMap(newGrid)
 
@@ -82,7 +83,8 @@ class GameService(metaclass=Singleton):
         return self.gameMap.assignRandomStartingPosition(player)
 
     def getCookies(self):
-        return self.gameMap.inFlightCookies.items()
+        tuples = self.gameMap.inFlightCookies.items()
+        return [cookie for (k, cookie) in tuples]
 
     def hasCookiesInFlight(self):
         return len(self.gameMap.inFlightCookies) > 0
@@ -93,6 +95,7 @@ class GameService(metaclass=Singleton):
     def moveCookies(self):
         self.gameMap.moveInFlightCookies()
 
-    def tossCookie(self, player, cookie, direction):
+    def tossCookie(self, player, direction):
+        cookie = player.dropCookie()
         cookie.direction = direction
         self.gameMap.putCookieInFlight(cookie, player.position, direction)

@@ -4,13 +4,9 @@ from protocol import *
 from game_domain import *
 from communication import *
 import services
+import sys
 from utilities import ThreadSafeSingleton
-
-COOKIE_SPEED = 3
-
-def playGame(playerId, clientSocket):
-    print('Player '+playerId+' is about to play the game')
-    Game.instance().addPlayerToGame(playerId, clientSocket)
+from game_domain import WinnerFound
 
 class Game(ThreadSafeSingleton):
     pass
@@ -34,11 +30,17 @@ class Game(ThreadSafeSingleton):
             self.__considerPlayerMove(request)
         elif request.command.isThrow():
             self.__considerPlayerThrow(request)
+        elif request.command.isLogout():
+            self.__considerPlayerLogout(request)
+
+    def __considerPlayerLogout(self, request):
+        self.playerSenders.pop(request.playerId)
+        self.playerReceivers.pop(request.playerId)
+        self.playerService.remove(request.playerId)
 
     def __considerPlayerMove(self, request):
         try:
             player = self.playerService.get(request.originId)
-            print('Player '+player.playerId+' requested a move '+str(request.direction))
             self.gameService.movePlayer(player, request.direction)
             self.cleanState = False
         except UnmovableDirection:
@@ -47,25 +49,31 @@ class Game(ThreadSafeSingleton):
     def __considerPlayerThrow(self, request):
         try:
             player = self.playerService.get(request.originId)
-            cookie = player.cookies[0]
-            self.gameService.tossCookie(player, cookie, request.direction)
+            self.gameService.tossCookie(player, request.direction)
             self.cleanState = False
         except IndexError:
             raise PlayerGameError(badCommand("You don't have any more cookies to throw"))
 
     def __considerPlayerLogin(self, request):
         if self.playerService.get(request.playerId) is None:
-            playGame(request.playerId, request.origin)
-            self.cleanState = False
+            self.addPlayerToGame(request.playerId, request.origin)
         else:
             raise PlayerGameError(badCommand("Player already logged in"))
 
     def __considerPlayerMessage(self, request):
         try:
-            other = self.playerSenders[request.playerId]
-            other.respondToPlayer(request.message)
+            if request.playerId is 'all':
+                self.__messageAllPlayers(request)
+            else:
+                other = self.playerSenders[request.playerId]
+                other.respondToPlayer(playerMessage(request.playerId, request.message+'\n'))
         except KeyError:
             raise PlayerGameError(badCommand("Recipient is not logged in"))
+
+    def __messageAllPlayers(self, request):
+        for key in self.playerSenders:
+            sender = self.playerSenders[key]
+            sender.respondToPlayer(playerMessage('all', request.message+'\n'))
 
     #Called only by the ServerUpdater thread
     def getGameState(self):
@@ -97,7 +105,6 @@ class Game(ThreadSafeSingleton):
         playerSender.respondToPlayer(loginSuccess(mapX, mapY))
         initialState = self.getInitialGameState()
         playerSender.sendMessages(initialState.toMessages())
-        print('Player '+playerId+' was added to the game')
         playerReceiver.listen()
 
     def hasCookiesInFlight(self):
@@ -105,8 +112,19 @@ class Game(ThreadSafeSingleton):
 
     def moveCookies(self):
         if self.gameService.hasCookiesInFlight():
-            self.gameService.moveCookies()
-            self.cleanState = False
+            try:
+                self.gameService.moveCookies()
+                self.cleanState = False
+            except WinnerFound as winner:
+                self.gameWon(winner.playerId)
+
+    def gameWon(self, playerId):
+        for key in self.playerSenders:
+            sender = self.playerSenders[key]
+            sender.respondToPlayer(playerWon(playerId))
+            sender.playerSocket.close()
+        sys.exit()
+
 
 class GameState():
 
@@ -134,7 +152,8 @@ class GameState():
                 tiles = []
                 for mapSpace in row:
                     tiles.append(mapSpace.tile)
-                mapMessages.append(mapSubsection(0, rowIndex, self.mapGrid.columns, rowIndex, tiles))
+                print(tiles)
+                mapMessages.append(mapSubsection(0, rowIndex, self.mapGrid.columns - 1, rowIndex, tiles))
                 rowIndex += 1
         return mapMessages
 

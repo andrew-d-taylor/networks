@@ -6,18 +6,16 @@ import threading
 import sys
 import protocol
 from game import Game
-from game import playGame
 from game import PlayerGameError
-from game import COOKIE_SPEED
 from queue import Queue
-from settings import encoding
 import time
+import settings
 
 class FrontServer():
 
-    def __init__(self, port):
+    def __init__(self):
         self.loginSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.port = port
+        self.port = settings.port
         self.loginQueue = ThreadQue()
 
     def start(self):
@@ -30,7 +28,6 @@ class FrontServer():
             thread.start()
 
         requestQueue = Queue()
-
         Game.instance().requestQueue = requestQueue
 
         updater = ServerUpdater()
@@ -65,20 +62,22 @@ class FrontServer():
 def loginWorker(loginQueue):
     while True:
         clientSocket = loginQueue.get()
-        print('Login worker received its socket')
         loginResponder(clientSocket)
 
 def loginResponder(clientSocket):
+        clientSocket.sendall(bytes(protocol.playerMessage('', 'Welcome. Log in to play the game.'), settings.encoding))
         request, b, c, d = clientSocket.recvmsg(4096)
-        print('Login responder read the socket request')
         request = request.decode('UTF-8')
-        clientRequest = protocol.ClientRequest(request, clientSocket, request.split()[1])
-        if not clientRequest.command.isLogin():
-            clientSocket.sendall(bytes(protocol.badCommand("Player must log in before playing. Goodbye."), encoding))
-            print('User tried to play without logging in')
-            clientSocket.close()
-        else:
-            playGame(clientRequest.playerId, clientSocket)
+        try:
+            clientRequest = protocol.ClientRequest(request, clientSocket, request.split()[1])
+            if not clientRequest.command.isLogin():
+                raise protocol.RequestParsingException
+            else:
+                Game.instance().considerPlayerRequest(clientRequest)
+        except (protocol.RequestParsingException, IndexError):
+                clientSocket.sendall(bytes(protocol.badCommand("Player must log in before playing. Goodbye."), settings.encoding))
+                clientSocket.close()
+
 
 #Ticks cookie movement and sends updates to players
 class ServerUpdater():
@@ -90,7 +89,6 @@ class ServerUpdater():
                 messages = gameState.toMessages()
                 for sender in senders:
                     sender.sendMessages(messages)
-                print('ServerUpdater sent out a new GameState')
             time.sleep(0)
 
 #Process requests from players and gives them to the game server
@@ -99,11 +97,10 @@ class RequestReader():
     def run(self, requestQueue):
         while True:
             clientRequest = requestQueue.get()
-            print('RequestReader got a request off the queue')
             try:
                 Game.instance().considerPlayerRequest(clientRequest)
             except PlayerGameError as e:
-                clientRequest.origin.sendall(bytes(e.msg, encoding))
+                clientRequest.origin.sendall(bytes(e.msg, settings.encoding))
             time.sleep(0)
 
 #Move in-flight cookies every so often
@@ -112,5 +109,4 @@ class CookieMover():
     def run(self):
         while True:
             Game.instance().moveCookies()
-            print('CookieMover tried to move cookies')
-            time.sleep(COOKIE_SPEED)
+            time.sleep(settings.cookie_speed)

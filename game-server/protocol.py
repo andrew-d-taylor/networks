@@ -22,7 +22,7 @@ def mapSubsection(x1, y1, x2, y2, tiles):
     return "".join(msg)
 
 def cookieInFlight(cookieId, cookieX, cookieY, direction):
-    return "103 " + cookieId + ", " + str(cookieX) + ", " + str(cookieY) + ", " + direction + "\n"
+    return "103 " + cookieId + ", " + str(cookieX) + ", " + str(cookieY) + ", " + str(direction) + "\n"
 
 
 def playerCookieUpdate(playerId, playerX, playerY, cookieCount):
@@ -39,18 +39,22 @@ def serverError(message):
 
 class ClientRequest():
     def __init__(self, requestString, originSocket, originId):
-        print('New message: '+requestString)
         requestSplit = requestString.split()
-        self.command = Command(requestSplit[0])
-        self.origin = originSocket
-        self.originId = originId
-        if self.command.isLogin():
-            self.playerId = requestSplit[1]
-        elif self.command.isMessage():
-            self.playerId = requestSplit[1]
-            self.message = requestSplit[2]
-        else:
-            self.direction = Direction(requestSplit[1])
+        try:
+            self.command = Command(requestSplit[0])
+            self.origin = originSocket
+            self.originId = originId
+            if self.command.isLogin():
+                self.playerId = requestSplit[1]
+            elif self.command.isLogout():
+                self.playerId = originId
+            elif self.command.isMessage():
+                self.playerId = requestSplit[1]
+                self.message = requestSplit[2]
+            else:
+                self.direction = Direction(requestSplit[1])
+        except IndexError:
+            raise RequestParsingException
 
     def writeErrorResponse(self, msg):
         raw = bytes(msg, encoding)
@@ -65,6 +69,8 @@ class Command():
         requestSubstring = requestSubstring.lower()
         if requestSubstring == "login" or requestSubstring == "l":
             return "login"
+        elif requestSubstring == "logout" or requestSubstring == "lo":
+            return "logout"
         elif requestSubstring == "move" or requestSubstring == "m":
             return "move"
         elif requestSubstring == "throw" or requestSubstring == "t":
@@ -76,6 +82,9 @@ class Command():
 
     def isLogin(self):
         return self.__command == "login"
+
+    def isLogout(self):
+        return self.__command == "logout"
 
     def isMove(self):
         return self.__command == "move"
