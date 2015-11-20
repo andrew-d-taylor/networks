@@ -94,18 +94,27 @@ class Game(ThreadSafeSingleton):
 
     def addPlayerToGame(self, playerId, clientSocket):
         player = self.playerService.register(playerId)
-        self.gameService.assignStartingPosition(player)
-        self.playerService.assignStartingCookies(player)
+        self.gameService.assignStartingState(player)
+        playerSender, playerReceiver = self.__establishCommunication(playerId, clientSocket)
+        self.__sendLoginResponse(playerSender)
+        self.__sendInitialState(playerSender)
+        playerReceiver.listen()
+
+    def __establishCommunication(self, playerId, clientSocket):
         playerReceiver = PlayerReceiver(playerId, clientSocket, self.requestQueue)
-        playerSender = PlayerSender(player.playerId, clientSocket)
-        self.playerReceivers[player.playerId] = playerReceiver
-        self.playerSenders[player.playerId] = playerSender
+        playerSender = PlayerSender(playerId, clientSocket)
+        self.playerReceivers[playerId] = playerReceiver
+        self.playerSenders[playerId] = playerSender
+        return playerSender, playerReceiver
+
+    def __sendLoginResponse(self, playerSender):
         mapX = self.gameService.getMapGrid().columns
         mapY = self.gameService.getMapGrid().rows
         playerSender.respondToPlayer(loginSuccess(mapX, mapY))
+
+    def __sendInitialState(self, playerSender):
         initialState = self.getInitialGameState()
         playerSender.sendMessages(initialState.toMessages())
-        playerReceiver.listen()
 
     def hasCookiesInFlight(self):
         return self.gameService.hasCookiesInFlight()

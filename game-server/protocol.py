@@ -11,7 +11,7 @@ def playerMessage(playerId, messageText):
 
 
 def playerWon(playerId):
-    return "101 " + playerId + " won the game!\n"
+    return "101 " + playerId + ", won the game!\n"
 
 
 def mapSubsection(x1, y1, x2, y2, tiles):

@@ -13,11 +13,6 @@ class Player():
         self.cookies = cookies
         self.playerId = playerid
 
-    def movePosition(self, newPosition):
-        self.position = newPosition
-        for cookie in self.cookies:
-            cookie.position = newPosition
-
     def dropCookie(self):
         return self.cookies.pop()
 
@@ -78,37 +73,44 @@ class GameMap(metaclass=Singleton):
 
         for key in self.inFlightCookies:
             cookie = self.inFlightCookies[key]
+
             #move to next space
             nextPosition = self.playerGrid.getNextPosition(cookie.position, cookie.direction)
             nextMapSpace = self.playerGrid.getMapSpace(nextPosition)
 
             #if the cookie hit a wall
             if nextMapSpace is None or not nextMapSpace.isTraversible():
-                cookiesToRemove.append(cookie)
-                service = PlayerService()
-                player = service.get(cookie.playerId)
-                previousSpace = self.playerGrid.getMapSpace(cookie.position)
-                previousSpace.cookies.remove(cookie)
-                player.getHitByCookie(cookie)
-                service.save(player)
+                cookiesToRemove.append(self.__hitWall(cookie))
             #If the cookie has hit someone
             elif len(nextMapSpace.players) > 0:
-                cookiesToRemove.append(cookie)
-                service = PlayerService()
-                previousPlayer = service.get(cookie.playerId)
-                previousSpace = self.playerGrid.getMapSpace(cookie.position)
-                previousSpace.cookies.remove(cookie)
-                hitPlayer = nextMapSpace.players[0]
-                hitPlayer.getHitByCookie(cookie)
-                service.save(hitPlayer)
-                if len(previousPlayer.cookies) == 0:
-                    raise WinnerFound(previousPlayer.playerId)
+                cookiesToRemove.append(self.__hitPlayer(cookie, nextMapSpace))
             else:
             #cookie keeps travelling
                 self.travel(cookie, cookie.direction)
 
         for cookie in cookiesToRemove:
             self.inFlightCookies.pop(cookie.cookieId)
+
+    def __hitWall(self, cookie):
+        service = PlayerService()
+        player = service.get(cookie.playerId)
+        previousSpace = self.playerGrid.getMapSpace(cookie.position)
+        previousSpace.cookies.remove(cookie)
+        player.getHitByCookie(cookie)
+        service.save(player)
+        return cookie
+
+    def __hitPlayer(self, cookie, nextMapSpace):
+        service = PlayerService()
+        previousPlayer = service.get(cookie.playerId)
+        previousSpace = self.playerGrid.getMapSpace(cookie.position)
+        previousSpace.cookies.remove(cookie)
+        hitPlayer = nextMapSpace.players[0]
+        hitPlayer.getHitByCookie(cookie)
+        service.save(hitPlayer)
+        if len(previousPlayer.cookies) == 0:
+            raise WinnerFound(previousPlayer.playerId)
+        return cookie
 
     def travel(self, positioned_object, direction):
         if not self.objectCanTravel(positioned_object.position, direction):

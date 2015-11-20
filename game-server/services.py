@@ -79,7 +79,11 @@ class GameService(metaclass=Singleton):
         newGrid.generateDefaultLayout()
         return game_domain.GameMap(newGrid)
 
-    def assignStartingPosition(self, player):
+    def assignStartingState(self, player):
+        self.__assignStartingPosition(player)
+        self.playerService.assignStartingCookies(player)
+
+    def __assignStartingPosition(self, player):
         return self.gameMap.assignRandomStartingPosition(player)
 
     def getCookies(self):
@@ -97,5 +101,4 @@ class GameService(metaclass=Singleton):
 
     def tossCookie(self, player, direction):
         cookie = player.dropCookie()
-        cookie.direction = direction
         self.gameMap.putCookieInFlight(cookie, player.position, direction)
