@@ -32,6 +32,9 @@ def playerCookieUpdate(playerId, playerX, playerY, cookieCount):
 def badCommand(message):
     return "400 " + message + "\n"
 
+def logOut(playerId):
+    return "104 "+playerId+", -1, -1, -1"
+
 
 def serverError(message):
     return "500 " + message + "\n"
@@ -40,6 +43,8 @@ def serverError(message):
 class ClientRequest():
     def __init__(self, requestString, originSocket, originId):
         requestSplit = requestString.split()
+        if not requestSplit:
+            return
         try:
             self.command = Command(requestSplit[0])
             self.origin = originSocket
@@ -56,6 +61,7 @@ class ClientRequest():
         except IndexError:
             raise RequestParsingException
 
+
     def writeErrorResponse(self, msg):
         raw = bytes(msg, encoding)
         self.origin.sendall(raw)
@@ -69,8 +75,8 @@ class Command():
         requestSubstring = requestSubstring.lower()
         if requestSubstring == "login" or requestSubstring == "l":
             return "login"
-        elif requestSubstring == "logout" or requestSubstring == "lo":
-            return "logout"
+        elif requestSubstring == "Q" or requestSubstring == "q":
+            return "q"
         elif requestSubstring == "move" or requestSubstring == "m":
             return "move"
         elif requestSubstring == "throw" or requestSubstring == "t":
@@ -84,7 +90,7 @@ class Command():
         return self.__command == "login"
 
     def isLogout(self):
-        return self.__command == "logout"
+        return self.__command == "q"
 
     def isMove(self):
         return self.__command == "move"

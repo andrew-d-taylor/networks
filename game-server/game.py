@@ -37,6 +37,7 @@ class Game(ThreadSafeSingleton):
         self.playerSenders.pop(request.playerId)
         self.playerReceivers.pop(request.playerId)
         self.playerService.remove(request.playerId)
+        self.__signalLogout(request.playerId)
 
     def __considerPlayerMove(self, request):
         try:
@@ -74,6 +75,11 @@ class Game(ThreadSafeSingleton):
         for key in self.playerSenders:
             sender = self.playerSenders[key]
             sender.respondToPlayer(playerMessage('all', request.message+'\n'))
+
+    def __signalLogout(self, playerId):
+        for key in self.playerSenders:
+            sender = self.playerSenders[key]
+            sender.respondToPlayer(logOut(playerId)+"\n")
 
     #Called only by the ServerUpdater thread
     def getGameState(self):
@@ -148,6 +154,8 @@ class GameState():
         cookieMessages = self.__convertCookies()
         playerMessages = self.__convertPlayers()
         messages.extend(mapMessages)
+        if len(mapMessages) > 0:
+            messages.extend(["999 Initial State Update Done\n"])
         messages.extend(cookieMessages)
         messages.extend(playerMessages)
         return messages

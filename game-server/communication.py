@@ -19,6 +19,7 @@ class PlayerReceiver():
             try:
                 msg, b, c, d = self.playerSocket.recvmsg(4096)
                 msg = msg.decode('UTF-8')
+                print(msg)
                 request = ClientRequest(msg, self.playerSocket, self.playerId)
                 if request.command.isLogin():
                     self.playerSocket.sendall(bytes(badCommand('Already logged in.'), encoding))
@@ -35,6 +36,11 @@ class PlayerReceiver():
                 logout = ClientRequest('logout', None, self.playerId)
                 self.requestQueue.put(logout)
                 break
+            except Exception:
+                logout = ClientRequest('logout', None, self.playerId)
+                self.requestQueue.put(logout)
+                break
+
 
 class PlayerSender():
 
@@ -43,6 +49,7 @@ class PlayerSender():
         self.playerSocket = playerSocket
 
     def respondToPlayer(self, message):
+        print("Sent message:"+message)
         raw = bytes(message, encoding)
         self.playerSocket.sendall(raw)
 
