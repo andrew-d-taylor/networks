@@ -97,7 +97,7 @@ class GameService(metaclass=Singleton):
         return self.gameMap.playerGrid
 
     def moveCookies(self):
-        self.gameMap.moveInFlightCookies()
+        return self.gameMap.moveInFlightCookies()
 
     def tossCookie(self, player, direction):
         cookie = player.dropCookie()

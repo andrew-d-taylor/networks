@@ -70,6 +70,7 @@ class GameMap(metaclass=Singleton):
     def moveInFlightCookies(self):
 
         cookiesToRemove = []
+        hitOccurences = []
 
         for key in self.inFlightCookies:
             cookie = self.inFlightCookies[key]
@@ -80,16 +81,22 @@ class GameMap(metaclass=Singleton):
 
             #if the cookie hit a wall
             if nextMapSpace is None or not nextMapSpace.isTraversible():
-                cookiesToRemove.append(self.__hitWall(cookie))
+                cookie, player = self.__hitWall(cookie)
+                cookiesToRemove.append(cookie)
+                hitOccurences.append((cookie, nextPosition, "-1"))
             #If the cookie has hit someone
             elif len(nextMapSpace.players) > 0:
-                cookiesToRemove.append(self.__hitPlayer(cookie, nextMapSpace))
+                cookie, player = self.__hitPlayer(cookie, nextMapSpace)
+                cookiesToRemove.append(cookie)
+                hitOccurences.append((cookie, nextPosition, player))
             else:
             #cookie keeps travelling
                 self.travel(cookie, cookie.direction)
 
         for cookie in cookiesToRemove:
             self.inFlightCookies.pop(cookie.cookieId)
+
+        return hitOccurences
 
     def __hitWall(self, cookie):
         service = PlayerService()
@@ -98,7 +105,7 @@ class GameMap(metaclass=Singleton):
         previousSpace.cookies.remove(cookie)
         player.getHitByCookie(cookie)
         service.save(player)
-        return cookie
+        return (cookie, player)
 
     def __hitPlayer(self, cookie, nextMapSpace):
         service = PlayerService()
@@ -110,7 +117,7 @@ class GameMap(metaclass=Singleton):
         service.save(hitPlayer)
         if len(previousPlayer.cookies) == 0:
             raise WinnerFound(previousPlayer.playerId)
-        return cookie
+        return (cookie, hitPlayer)
 
     def travel(self, positioned_object, direction):
         if not self.objectCanTravel(positioned_object.position, direction):

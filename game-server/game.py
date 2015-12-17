@@ -37,7 +37,7 @@ class Game(ThreadSafeSingleton):
         self.playerSenders.pop(request.playerId)
         self.playerReceivers.pop(request.playerId)
         self.playerService.remove(request.playerId)
-        self.__signalLogout(request.playerId)
+        self.__broadcastMessage(logOut(request.playerId))
 
     def __considerPlayerMove(self, request):
         try:
@@ -76,10 +76,10 @@ class Game(ThreadSafeSingleton):
             sender = self.playerSenders[key]
             sender.respondToPlayer(playerMessage('all', request.message+'\n'))
 
-    def __signalLogout(self, playerId):
+    def __broadcastMessage(self, message):
         for key in self.playerSenders:
             sender = self.playerSenders[key]
-            sender.respondToPlayer(logOut(playerId)+"\n")
+            sender.respondToPlayer(message+"\n")
 
     #Called only by the ServerUpdater thread
     def getGameState(self):
@@ -128,8 +128,11 @@ class Game(ThreadSafeSingleton):
     def moveCookies(self):
         if self.gameService.hasCookiesInFlight():
             try:
-                self.gameService.moveCookies()
-                self.cleanState = False
+                hitOccurences = self.gameService.moveCookies()
+                if len(hitOccurences) > 0:
+                    self.__handleCookieHits(hitOccurences)
+                else:
+                    self.cleanState = False
             except WinnerFound as winner:
                 self.gameWon(winner.playerId)
 
@@ -140,6 +143,12 @@ class Game(ThreadSafeSingleton):
             sender.playerSocket.close()
         sys.exit()
 
+    def __handleCookieHits(self, hitOccurences):
+        for cookie, position, player in hitOccurences:
+            if player == "-1":
+                self.__broadcastMessage(hitWall(cookie, position))
+            else:
+                self.__broadcastMessage(hitPlayer(cookie, position, player))
 
 class GameState():
 

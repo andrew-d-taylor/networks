@@ -35,6 +35,11 @@ def badCommand(message):
 def logOut(playerId):
     return "104 "+playerId+", -1, -1, -1"
 
+def hitWall(cookie, position):
+    return "105 "+cookie.cookieId+", "+str(position.x)+", "+str(position.y)+", -1\n"
+
+def hitPlayer(cookie, position, player):
+    return "105 "+cookie.cookieId+", "+str(position.x)+", "+str(position.y)+", "+player.playerId+"\n"
 
 def serverError(message):
     return "500 " + message + "\n"
